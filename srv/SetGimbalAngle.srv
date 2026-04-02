@@ -1,0 +1,10 @@
+# Request
+float32 yaw    # degrees
+float32 pitch  # degrees (-90 to 30)
+---
+# Response
+bool success
+float32 current_yaw
+float32 current_pitch
+float32 current_roll
+string message

@@ -1,0 +1,13 @@
+# Request
+int8 ZOOM_IN = 1
+int8 ZOOM_STOP = 0
+int8 ZOOM_OUT = -1
+
+int8 zoom_command
+# For absolute zoom
+float32 absolute_zoom  # 0 means not used, otherwise set absolute zoom level
+---
+# Response
+bool success
+float32 current_zoom
+string message

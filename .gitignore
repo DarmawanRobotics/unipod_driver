@@ -1,0 +1,73 @@
+# =========================
+# ROS 2 build artifacts
+# =========================
+build/
+install/
+log/
+
+# Colcon test results
+test_results/
+
+# =========================
+# Python
+# =========================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pyc.*
+*.swp
+
+# Virtual environments
+venv/
+.env/
+.envrc
+
+# =========================
+# C++ build files
+# =========================
+*.o
+*.so
+*.a
+*.out
+*.exe
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# =========================
+# VSCode
+# =========================
+.vscode/
+
+# Keep shared VSCode configs (optional)
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+# =========================
+# OS files
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# Logs
+# =========================
+*.log
+
+# =========================
+# ROS bag files (optional, usually large)
+# =========================
+*.db3
+*.bag
+
+# =========================
+# Misc
+# =========================
+*.swp
+*.bak
+*.tmp

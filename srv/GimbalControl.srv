@@ -1,0 +1,7 @@
+# Request
+int8 yaw_speed    # -100 to 100
+int8 pitch_speed  # -100 to 100
+---
+# Response
+bool success
+string message

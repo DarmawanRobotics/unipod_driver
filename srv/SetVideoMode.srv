@@ -1,0 +1,13 @@
+# Request
+uint8 ZOOM = 0
+uint8 WIDE_ANGLE = 1
+uint8 THERMAL = 2
+
+uint8 main_stream
+uint8 sub_stream
+---
+# Response
+bool success
+uint8 current_main_stream
+uint8 current_sub_stream
+string message

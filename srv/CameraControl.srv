@@ -1,0 +1,13 @@
+# Request
+uint8 CAPTURE_PHOTO = 0
+uint8 TOGGLE_RECORDING = 2
+uint8 SET_LOCK_MODE = 3
+uint8 SET_FOLLOW_MODE = 4
+uint8 SET_FPV_MODE = 5
+uint8 TOGGLE_ZOOM_LINKAGE = 10
+
+uint8 command
+---
+# Response
+bool success
+string message
