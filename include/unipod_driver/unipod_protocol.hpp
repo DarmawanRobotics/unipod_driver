@@ -1,5 +1,5 @@
-#ifndef Unipod_PROTOCOL_HPP
-#define Unipod_PROTOCOL_HPP
+#ifndef UNIPOD_PROTOCOL_HPP
+#define UNIPOD_PROTOCOL_HPP
 
 #include <cstdint>
 #include <vector>
