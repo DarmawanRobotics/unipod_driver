@@ -1,0 +1,12 @@
+unipod_driver_node:
+  ros__parameters:
+    # Connection settings
+    connection_type: "tcp"  # Options: tcp, udp, serial
+    ip_address: "10.21.31.26"
+    port: 37260
+    serial_device: "/dev/ttyUSB0"
+    serial_baudrate: 115200
+    
+    # Data rates (Hz)
+    attitude_rate: 10
+    status_rate: 1
