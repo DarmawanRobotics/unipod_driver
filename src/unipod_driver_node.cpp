@@ -429,11 +429,11 @@ void UnipodDriverNode::statusUpdateTimer() {
     gimbal_status_pub_->publish(current_status_);
 }
 
-} // namespace Unipod_Driver
+} // namespace unipod_driver
 
 int main(int argc, char** argv) {
     rclcpp::init(argc, argv);
-    auto node = std::make_shared<Unipod_Driver::UnipodDriverNode>();
+    auto node = std::make_shared<unipod_driver::UnipodDriverNode>();
     rclcpp::spin(node);
     rclcpp::shutdown();
     return 0;

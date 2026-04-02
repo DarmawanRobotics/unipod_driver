@@ -44,9 +44,10 @@ include_directories(
   ${rclcpp_INCLUDE_DIRS}
 )
 
-# Library for unipod protocol
+# Library for Unipod protocol
 add_library(unipod_protocol SHARED
   src/unipod_protocol.cpp
+  src/unipod_comm.cpp
 )
 
 ament_target_dependencies(unipod_protocol
@@ -56,13 +57,37 @@ ament_target_dependencies(unipod_protocol
 rosidl_target_interfaces(unipod_protocol
   ${PROJECT_NAME} "rosidl_typesupport_cpp")
 
+# Main node executable
+add_executable(unipod_driver_node
+  src/unipod_driver_node.cpp
+)
+
+target_link_libraries(unipod_driver_node
+  unipod_protocol
+)
+
+ament_target_dependencies(unipod_driver_node
+  rclcpp
+  std_msgs
+  sensor_msgs
+  geometry_msgs
+  std_srvs
+)
+
+rosidl_target_interfaces(unipod_driver_node
+  ${PROJECT_NAME} "rosidl_typesupport_cpp")
 
 # Install targets
 install(TARGETS
-  unipod_protocol
+ unipod_protocol
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
+)
+
+install(TARGETS
+  unipod_driver_node
+  DESTINATION lib/${PROJECT_NAME}
 )
 
 install(DIRECTORY
@@ -71,6 +96,8 @@ install(DIRECTORY
 )
 
 install(DIRECTORY
+  launch
+  config
   DESTINATION share/${PROJECT_NAME}
 )
 
