@@ -28,7 +28,8 @@
     temperature_stream: true  # full-frame max/min at 5 Hz on thermal/temperature
 
 # Both RTSP streams (main/camera: video1, sub/camera: video2). The URL comes from the launch
-# file's ip argument. Override one stream with a /**/main/camera or /**/sub/camera section.
+# file's ip argument. Override one stream with a /**/main/camera or /**/sub/camera section
+# (the launch file merges the sections; Foxy itself does not expand /**/name keys).
 /**/camera:
   ros__parameters:
     codec: auto               # auto (decodebin) | h264 | h265; the driver logs what the pod sends
