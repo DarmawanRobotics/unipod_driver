@@ -13,7 +13,7 @@ streams as images, and the thermal camera's temperatures in °C.**
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
 [Interface](#interface) · [Network](#network) · [Quick start](#quick-start) · [Usage](#usage) ·
-[Parameters](#parameters) · [Verify on the real pod](#verify-on-the-real-pod) · [Develop](#develop)
+[Parameters](#parameters)
 
 </div>
 
@@ -207,56 +207,6 @@ thermal stream's camera node; per-pixel values are then 8-bit intensity (AGC), n
 
 One stream only: add a `/**/sub/camera:` section to your copy of the YAML (`config:=`).
 
-## Verify on the real pod
-
-1. **Link:** `ros2 topic echo --once /unipod/status` shows `connected: true`, firmware and
-   `zoom_max: 30.0`. The camera reports `v0.0.0` for the first ~30 s after power-up.
-2. **Streams:** the driver log lists `rtsp video1/video2: H265 1920x1080 ...`; set `codec` to
-   match when using `decoder: jetson`. `ros2 topic hz /unipod/main/image_raw` and `.../sub/...`.
-3. **Video mode:** `status.main_stream: 0`, `sub_stream: 2` (zoom on video1, thermal on video2).
-4. **Directions:** `ptz_cmd` `angular.z: 0.3` must pan **right** and `angular.y: 0.3` tilt
-   **up**; `attitude.yaw` grows to the right. Otherwise set `invert_yaw` / `invert_pitch`.
-5. **Stop:** stop the `ptz_cmd` publisher: the gimbal stops within 0.5 s.
-6. **Zoom:** `set_zoom 10.0` then `status.zoom` reads ~10.
-7. **Thermal:** point a hand at the camera, `thermal/temperature` `temp_max` near 30–36 °C;
-   `get_temperature` on that pixel agrees.
-8. **Recenter:** `recenter {mode: 1}` brings the gimbal back to center.
-
-## Develop
-
-```bash
-colcon build --packages-select unipod_driver
-colcon test --packages-select unipod_driver && colcon test-result --verbose
-bash src/unipod_driver/test/smoke_test.sh   # with the workspace sourced
-```
-
-- `test_protocol`: every example packet of chapter 4 of the SDK document, byte for byte, and the
-  stream parser (resync, bad CRC, split frames)
-- `test_client`: request/ACK, decoding, timeouts, pushed streams and reconnects against an
-  in-memory pod; `test_transport`: real UDP/TCP on loopback
-- `test_rtsp`: GStreamer pipelines, decoder order, the capture loop on a local video
-- `smoke_test.sh`: the launch file against [test/fake_pod.py](test/fake_pod.py), every topic and
-  service; CI runs all of it in a `ros:humble` container
-
-```
-unipod_driver/
-├── include/unipod_driver/
-│   ├── protocol.hpp        framing, CRC16 (no ROS)
-│   ├── transport.hpp       UDP / TCP / serial (no ROS)
-│   ├── client.hpp          request/ACK, link supervision, typed API (no ROS)
-│   ├── rtsp_capture.hpp    RTSP capture thread (OpenCV, no ROS)
-│   └── ...
-├── src/
-│   ├── unipod_driver_node.cpp
-│   └── unipod_camera_node.cpp
-├── msg/ srv/               GimbalAttitude, GimbalStatus, ThermalData + 7 services
-├── config/unipod_config.yaml
-├── docs/                  UniPod MT11 External SDK Protocol (PDF)
-├── launch/unipod_driver.launch.py
-└── test/
-```
-
-The client and capture libraries have no ROS dependency, so they can be reused in a plain C++
-program (`unipod_client`, `unipod_rtsp`).
+## License
 
 unipod_driver is released under the [Apache License 2.0](LICENSE).
