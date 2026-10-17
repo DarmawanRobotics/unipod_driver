@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 3.5)
 project(unipod_driver)
 
-# Default to C++14
 if(NOT CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 14)
+  set(CMAKE_CXX_STANDARD 17)
 endif()
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -44,6 +44,19 @@ include_directories(
   ${rclcpp_INCLUDE_DIRS}
 )
 
+# ROS-free client: protocol, transports, request/ACK handling
+find_package(Threads REQUIRED)
+add_library(unipod_client SHARED
+  src/protocol.cpp
+  src/transport.cpp
+  src/client.cpp
+)
+target_include_directories(unipod_client PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(unipod_client Threads::Threads)
+
 # Library for Unipod protocol
 add_library(unipod_protocol SHARED
   src/unipod_protocol.cpp
@@ -79,6 +92,7 @@ rosidl_target_interfaces(unipod_driver_node
 
 # Install targets
 install(TARGETS
+ unipod_client
  unipod_protocol
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
@@ -102,8 +116,13 @@ install(DIRECTORY
 )
 
 if(BUILD_TESTING)
-  find_package(ament_lint_auto REQUIRED)
-  ament_lint_auto_find_test_dependencies()
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_protocol test/test_protocol.cpp)
+  target_link_libraries(test_protocol unipod_client)
+  ament_add_gtest(test_client test/test_client.cpp)
+  target_link_libraries(test_client unipod_client)
+  ament_add_gtest(test_transport test/test_transport.cpp)
+  target_link_libraries(test_transport unipod_client)
 endif()
 
 ament_package()
