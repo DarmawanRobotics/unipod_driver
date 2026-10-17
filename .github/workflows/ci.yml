@@ -50,7 +50,11 @@ jobs:
           source /opt/ros/humble/setup.bash
           source install/setup.bash
           ros2 launch unipod_driver unipod_driver.launch.py --show-args > /dev/null
-          bash src/unipod_driver/test/smoke_test.sh
+          result=0
+          bash src/unipod_driver/test/smoke_test.sh > smoke.txt 2>&1 || result=$?
+          cat smoke.txt
+          echo "::notice title=Smoke test::$(grep -c '^ok' smoke.txt) ok, $(grep -c '^FAIL' smoke.txt) failed"
+          exit "$result"
       - name: Test reports
         if: always()
         uses: actions/upload-artifact@v4
