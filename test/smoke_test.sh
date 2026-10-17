@@ -3,6 +3,8 @@
 # Topics, every service, ptz_cmd and its timeout, and both camera nodes staying up without a
 # stream. Needs a sourced workspace.
 set -u
+# ros2 CLI output into a pipe is block-buffered and lost when timeout kills it
+export PYTHONUNBUFFERED=1
 
 here="$(cd "$(dirname "$0")" && pwd)"
 work="$(mktemp -d)"
