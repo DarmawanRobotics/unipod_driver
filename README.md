@@ -108,7 +108,7 @@ ros2 launch unipod_driver unipod_driver.launch.py ip:=10.21.31.26
 #   transport:=udp | serial (serial_device:=/dev/ttyUSB0), camera:=false for control only
 
 # 4. Second terminal
-ros2 topic echo --once /unipod/status
+ros2 topic echo /unipod/status
 ros2 run rqt_image_view rqt_image_view /unipod/main/image_raw
 ```
 
@@ -211,7 +211,7 @@ One stream only: add a `/**/sub/camera:` section to your copy of the YAML (`conf
 
 ## Verify on the real pod
 
-1. **Link:** `ros2 topic echo --once /unipod/status` shows `connected: true`, firmware and
+1. **Link:** `ros2 topic echo /unipod/status` shows `connected: true`, firmware and
    `zoom_max: 30.0`. The camera reports `v0.0.0` for the first ~30 s after power-up.
 2. **Streams:** the driver log lists `rtsp video1/video2: H265 1920x1080 ...`; set `codec` to
    match when using `decoder: jetson`. `ros2 topic hz /unipod/main/image_raw` and `.../sub/...`.
