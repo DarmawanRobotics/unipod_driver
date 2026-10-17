@@ -19,7 +19,8 @@ streams as images, and the thermal camera's temperatures in °C.**
 
 ---
 
-The MT11 takes commands over the *UniPod MT11 External SDK Protocol* (V0.1.0, frames `0x6655`,
+The MT11 takes commands over the *UniPod MT11 External SDK Protocol*
+([docs/UniPod_MT11_External_SDK_Protocol_V0.1.0.pdf](docs/UniPod_MT11_External_SDK_Protocol_V0.1.0.pdf), V0.1.0, frames `0x6655`,
 CRC16) on TCP/UDP 37260 or TTL serial, and streams video over RTSP. This package keeps only what
 a robot needs from it: PTZ, zoom, video mode, temperatures, palette/gain/shutter and recenter.
 AI tracking, laser ranging, recording and the SD card are left out.
@@ -72,7 +73,8 @@ signs (`invert_yaw` / `invert_pitch` flip them).
 
 ## Network
 
-From the SDK document (chapter 3) and the MT11 user manual:
+From the [SDK document](docs/UniPod_MT11_External_SDK_Protocol_V0.1.0.pdf) (chapter 3) and the
+[MT11 user manual](https://reebot.com/reebot_file/UniPodMT11/UniPod%20MT11%20User%20Manual%20v1.2%20.pdf):
 
 | | |
 |---|---|
@@ -249,6 +251,7 @@ unipod_driver/
 │   └── unipod_camera_node.cpp
 ├── msg/ srv/               GimbalAttitude, GimbalStatus, ThermalData + 7 services
 ├── config/unipod_config.yaml
+├── docs/                  UniPod MT11 External SDK Protocol (PDF)
 ├── launch/unipod_driver.launch.py
 └── test/
 ```
