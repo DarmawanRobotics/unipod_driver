@@ -1,0 +1,14 @@
+# One temperature measurement: a point (0x12), a box (0x13) or the full frame (0x14).
+# Coordinates in thermal image pixels.
+uint8 POINT = 0
+uint8 REGION = 1
+uint8 FRAME = 2
+uint8 mode
+uint16 x    # POINT: the point; REGION: top-left
+uint16 y
+uint16 x2   # REGION: bottom-right
+uint16 y2
+---
+bool success
+ThermalData data
+string message

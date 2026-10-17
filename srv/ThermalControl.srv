@@ -1,19 +1,10 @@
-# Request
-uint8 SET_PALETTE = 0
-uint8 SET_GAIN = 1
-uint8 GET_TEMP_POINT = 2
-uint8 GET_TEMP_REGION = 3
-uint8 UPDATE_SHUTTER = 4
-
+# Thermal camera settings.
+uint8 SET_PALETTE = 0       # value: palette, GimbalStatus.PALETTE_*
+uint8 SET_GAIN = 1          # value: 0 low gain (hot scenes), 1 high gain (better contrast)
+uint8 REFRESH_SHUTTER = 2   # flat-field correction now (value unused)
 uint8 command
-uint8 palette_mode  # 0-11 for different palettes
-uint8 gain_mode     # 0: Low, 1: High
-uint16 x
-uint16 y
-uint16 region_x2
-uint16 region_y2
+uint8 value
 ---
-# Response
 bool success
-float32 temperature
+uint8 value     # what the camera reports now
 string message

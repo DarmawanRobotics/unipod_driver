@@ -1,13 +1,15 @@
-# Request
+# What the two RTSP streams carry (0x11). The MT11 accepts these combinations:
+#   main ZOOM          + sub THERMAL
+#   main THERMAL       + sub ZOOM
+#   main ZOOM_THERMAL  + sub THERMAL
 uint8 ZOOM = 0
-uint8 WIDE_ANGLE = 1
+uint8 WIDE = 1
 uint8 THERMAL = 2
-
-uint8 main_stream
-uint8 sub_stream
+uint8 ZOOM_THERMAL = 3
+uint8 main_stream   # rtsp://<ip>:8554/video1
+uint8 sub_stream    # rtsp://<ip>:8554/video2
 ---
-# Response
 bool success
-uint8 current_main_stream
-uint8 current_sub_stream
+uint8 main_stream   # what the pod reports now
+uint8 sub_stream
 string message

@@ -1,6 +1,0 @@
-std_msgs/Header header
-
-uint32 camera_firmware_version
-uint32 gimbal_firmware_version
-uint32 zoom_firmware_version
-string hardware_id

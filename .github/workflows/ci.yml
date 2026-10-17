@@ -34,7 +34,17 @@ jobs:
         run: |
           source /opt/ros/humble/setup.bash
           colcon test --event-handlers console_cohesion+
-          colcon test-result --verbose
+          result=0
+          colcon test-result --verbose > test-result.txt 2>&1 || result=$?
+          cat test-result.txt
+          # the summary (and failures) as annotations, readable without the raw log
+          echo "::notice title=Tests::$(tail -n 1 test-result.txt)"
+          if [ "$result" != 0 ]; then
+            msg=$(head -c 30000 test-result.txt \
+              | sed -e ':a' -e 'N' -e '$!ba' -e 's/%/%25/g' -e 's/\r/%0D/g' -e 's/\n/%0A/g')
+            echo "::error title=Failing tests::$msg"
+            exit 1
+          fi
       - name: Test reports
         if: always()
         uses: actions/upload-artifact@v4

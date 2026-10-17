@@ -1,0 +1,7 @@
+# Absolute zoom with auto focus (0x0F), 1.0 .. zoom_max, one decimal.
+float32 zoom
+---
+bool success
+float32 zoom        # read back right after the command (the lens may still be moving)
+float32 zoom_max
+string message

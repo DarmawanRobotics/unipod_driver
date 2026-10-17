@@ -1,10 +1,9 @@
-# Request
-float32 yaw    # degrees
-float32 pitch  # degrees (-90 to 30)
+# Absolute gimbal angle (0x0E). Yaw unlimited, pitch -90..30 deg (clamped).
+float32 yaw     # deg, positive right
+float32 pitch   # deg, positive up
 ---
-# Response
 bool success
-float32 current_yaw
-float32 current_pitch
-float32 current_roll
+float32 yaw     # attitude reported in the ACK
+float32 pitch
+float32 roll
 string message
