@@ -63,6 +63,11 @@ jobs:
           bash src/unipod_driver/test/smoke_test.sh > smoke.txt 2>&1 || result=$?
           cat smoke.txt
           echo "::notice title=Smoke test::$(grep -c '^ok' smoke.txt) ok, $(grep -c '^FAIL' smoke.txt) failed"
+          if [ "$result" != 0 ]; then
+            msg=$(head -c 30000 smoke.txt \
+              | sed -e ':a' -e 'N' -e '$!ba' -e 's/%/%25/g' -e 's/\r/%0D/g' -e 's/\n/%0A/g')
+            echo "::error title=Smoke test output::$msg"
+          fi
           exit "$result"
       - name: Test reports
         if: always()
