@@ -26,3 +26,18 @@
     thermal_palette: -1       # 0 white hot, 3 ironbow, 10 black hot, ... (GimbalStatus.msg)
     thermal_gain: -1          # 0 low, 1 high
     temperature_stream: true  # full-frame max/min at 5 Hz on thermal/temperature
+
+# Both RTSP streams (main/camera: video1, sub/camera: video2). The URL comes from the launch
+# file's ip argument. Override one stream with a /**/main/camera or /**/sub/camera section.
+/**/camera:
+  ros__parameters:
+    codec: auto               # auto (decodebin) | h264 | h265; the driver logs what the pod sends
+    decoder: auto             # auto: jetson (needs codec) -> software -> ffmpeg
+    latency_ms: 0             # rtspsrc jitter buffer
+    protocols: tcp            # tcp | udp
+    reconnect_sec: 1.0        # first retry, doubles up to 30 s
+    timeout_ms: 5000          # dead stream detection
+    encoding: bgr8            # bgr8 | mono8 (mono8 + white hot palette: plain thermal intensity)
+    max_fps: 0.0              # 0: as received
+    width: 0                  # 0: as received
+    height: 0

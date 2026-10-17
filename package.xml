@@ -14,9 +14,17 @@
   <depend>rclcpp</depend>
   <depend>std_msgs</depend>
   <depend>geometry_msgs</depend>
+  <depend>cv_bridge</depend>
+  <depend>image_transport</depend>
+  <depend>libopencv-dev</depend>
 
   <exec_depend>rosidl_default_runtime</exec_depend>
   <exec_depend>launch_ros</exec_depend>
+  <!-- RTSP decoding: rtspsrc, depayloaders/parsers, avdec_h264/h265; compressed image topics -->
+  <exec_depend>gstreamer1.0-plugins-good</exec_depend>
+  <exec_depend>gstreamer1.0-plugins-bad</exec_depend>
+  <exec_depend>gstreamer1.0-libav</exec_depend>
+  <exec_depend>image_transport_plugins</exec_depend>
 
   <test_depend>ament_cmake_gtest</test_depend>
 
