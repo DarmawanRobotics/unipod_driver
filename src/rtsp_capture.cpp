@@ -6,6 +6,7 @@
 #include <vector>
 
 #include <opencv2/core/utility.hpp>
+#include <opencv2/core/version.hpp>
 #include <opencv2/videoio.hpp>
 
 #include "unipod_driver/rtsp_pipeline.hpp"
@@ -66,9 +67,13 @@ namespace
 bool openWith(cv::VideoCapture & cap, const CaptureConfig & c, const std::string & decoder)
 {
   if (decoder == "ffmpeg") {
-    // Low-latency FFmpeg RTSP options, unless the user set their own.
-    const std::string opts = "rtsp_transport;" + c.protocols + "|fflags;nobuffer|flags;low_delay";
+    // Low-latency FFmpeg RTSP options, unless the user set their own. stimeout (us) bounds
+    // connect/read on OpenCV builds without the timeout properties (4.2 on Focal / Foxy).
+    const std::string opts = "rtsp_transport;" + c.protocols + "|stimeout;" +
+      std::to_string(static_cast<long long>(c.timeout_ms) * 1000) +
+      "|fflags;nobuffer|flags;low_delay";
     ::setenv("OPENCV_FFMPEG_CAPTURE_OPTIONS", opts.c_str(), 0);
+#if CV_VERSION_MAJOR > 4 || (CV_VERSION_MAJOR == 4 && CV_VERSION_MINOR >= 5)
     const std::vector<int> params = {
       cv::CAP_PROP_OPEN_TIMEOUT_MSEC, c.timeout_ms,
       cv::CAP_PROP_READ_TIMEOUT_MSEC, c.timeout_ms,
@@ -76,6 +81,11 @@ bool openWith(cv::VideoCapture & cap, const CaptureConfig & c, const std::string
     if (!cap.open(c.url, cv::CAP_FFMPEG, params)) {
       return false;
     }
+#else
+    if (!cap.open(c.url, cv::CAP_FFMPEG)) {
+      return false;
+    }
+#endif
     cap.set(cv::CAP_PROP_BUFFERSIZE, 1);
     return true;
   }
