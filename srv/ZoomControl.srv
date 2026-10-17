@@ -1,13 +1,9 @@
-# Request
-int8 ZOOM_IN = 1
-int8 ZOOM_STOP = 0
-int8 ZOOM_OUT = -1
-
-int8 zoom_command
-# For absolute zoom
-float32 absolute_zoom  # 0 means not used, otherwise set absolute zoom level
+# Continuous zoom with auto focus (0x05): IN or OUT starts zooming, STOP stops it.
+int8 IN = 1
+int8 STOP = 0
+int8 OUT = -1
+int8 command
 ---
-# Response
 bool success
-float32 current_zoom
+float32 zoom    # x, reported in the ACK
 string message
