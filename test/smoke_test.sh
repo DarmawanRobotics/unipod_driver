@@ -38,10 +38,14 @@ ros2 launch unipod_driver unipod_driver.launch.py transport:=udp ip:=127.0.0.1 \
 pids+=($!)
 sleep 8
 
-# Foxy's `ros2 topic echo` has no --once: listen for a few seconds instead
-check "status connected" "connected: true" timeout 5 ros2 topic echo /unipod/status
-check "attitude stream" "yaw:" timeout 5 ros2 topic echo /unipod/attitude
-check "temperature stream" "temp_max: 60" timeout 5 ros2 topic echo /unipod/thermal/temperature
+# Foxy's `ros2 topic echo` has no --once: listen for a few seconds instead, with the type
+# given so it does not depend on discovery being finished
+check "status connected" "connected: true" \
+  timeout 8 ros2 topic echo /unipod/status unipod_driver/msg/GimbalStatus
+check "attitude stream" "yaw:" \
+  timeout 8 ros2 topic echo /unipod/attitude unipod_driver/msg/GimbalAttitude
+check "temperature stream" "temp_max: 60" \
+  timeout 8 ros2 topic echo /unipod/thermal/temperature unipod_driver/msg/ThermalData
 check "set_zoom" "success=True" \
   ros2 service call /unipod/set_zoom unipod_driver/srv/SetZoom "{zoom: 7.5}"
 check "zoom" "success=True, zoom=2.5" \
