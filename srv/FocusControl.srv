@@ -1,8 +1,0 @@
-# Request
-bool auto_focus
-uint16 touch_x
-uint16 touch_y
----
-# Response
-bool success
-string message
