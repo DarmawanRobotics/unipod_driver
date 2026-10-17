@@ -1,6 +1,7 @@
 // Decoded UniPod MT11 replies, in SI-ish units (degrees, degrees Celsius, zoom factor).
 #pragma once
 
+#include <cmath>
 #include <cstdint>
 #include <string>
 
@@ -34,6 +35,48 @@ enum StreamRate : uint8_t
   kRateOff = 0, kRate2Hz = 1, kRate4Hz = 2, kRate5Hz = 3,
   kRate10Hz = 4, kRate20Hz = 5, kRate50Hz = 6, kRate100Hz = 7,
 };
+
+// The supported 0x25 rate closest to `hz` (<= 0: off).
+inline StreamRate nearestStreamRate(double hz)
+{
+  if (!(hz > 0.0)) {
+    return kRateOff;
+  }
+  constexpr double kHz[] = {2, 4, 5, 10, 20, 50, 100};
+  int best = 0;
+  for (int i = 1; i < 7; ++i) {
+    if (std::abs(kHz[i] - hz) < std::abs(kHz[best] - hz)) {
+      best = i;
+    }
+  }
+  return static_cast<StreamRate>(best + 1);
+}
+
+inline double streamRateHz(StreamRate r)
+{
+  constexpr double kHz[] = {0, 2, 4, 5, 10, 20, 50, 100};
+  return r <= kRate100Hz ? kHz[r] : 0.0;
+}
+
+// -1..1 stick value to a 0x07 speed (-max..max, max <= 100); NaN/inf give 0.
+inline int8_t axisToSpeed(double axis, int max_speed)
+{
+  if (!std::isfinite(axis)) {
+    return 0;
+  }
+  axis = axis < -1.0 ? -1.0 : (axis > 1.0 ? 1.0 : axis);
+  max_speed = max_speed < 0 ? 0 : (max_speed > 100 ? 100 : max_speed);
+  return static_cast<int8_t>(std::lround(axis * max_speed));
+}
+
+// -1..1 stick value to a 0x05 zoom direction, with a dead band of +-0.5.
+inline int8_t axisToZoom(double axis)
+{
+  if (!std::isfinite(axis)) {
+    return 0;
+  }
+  return axis > 0.5 ? 1 : (axis < -0.5 ? -1 : 0);
+}
 
 // 0x25 data types.
 enum DataStream : uint8_t
