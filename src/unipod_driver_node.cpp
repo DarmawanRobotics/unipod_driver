@@ -1,440 +1,399 @@
 #include "unipod_driver/unipod_driver_node.hpp"
-#include <chrono>
+
+#include <functional>
+#include <stdexcept>
+
+namespace unipod_driver
+{
 
 using namespace std::chrono_literals;
 using std::placeholders::_1;
 using std::placeholders::_2;
+using Clock = std::chrono::steady_clock;
 
-namespace unipod_driver {
+namespace
+{
+std::string streamName(uint8_t s)
+{
+  static const char * names[] = {"zoom", "wide", "thermal", "zoom+thermal", "wide+thermal",
+    "zoom+wide", "none"};
+  return s <= kStreamNone ? names[s] : "unknown(" + std::to_string(s) + ")";
+}
+}  // namespace
 
-UnipodDriverNode::UnipodDriverNode(const rclcpp::NodeOptions& options)
-    : Node("Unipod_Driver_node", options) {
-    
-    RCLCPP_INFO(this->get_logger(), "Initializing Unipod Driver Node...");
-    
-    initializeParameters();
-    initializePublishers();
-    initializeSubscribers();
-    initializeServices();
-    
-    // Initialize protocol and communication
-    protocol_ = std::make_unique<UnipodProtocol>();
-    comm_ = std::make_unique<UnipodComm>();
-    
-    // Connect to gimbal
-    if (!connectToGimbal()) {
-        RCLCPP_ERROR(this->get_logger(), "Failed to connect to gimbal");
+UnipodDriverNode::UnipodDriverNode(const rclcpp::NodeOptions & options)
+: Node("unipod_driver", options)
+{
+  declareParameters();
+
+  const auto type = get_parameter("transport").as_string();
+  auto transport = makeTransport(
+    type, get_parameter("ip").as_string(),
+    static_cast<uint16_t>(get_parameter("port").as_int()),
+    get_parameter("serial_device").as_string(),
+    static_cast<uint32_t>(get_parameter("serial_baudrate").as_int()));
+  if (!transport) {
+    throw std::invalid_argument("transport must be udp, tcp or serial, not '" + type + "'");
+  }
+
+  UnipodClient::Options opts;
+  opts.timeout = std::chrono::milliseconds(get_parameter("request_timeout_ms").as_int());
+  client_ = std::make_unique<UnipodClient>(std::move(transport), opts);
+
+  attitude_pub_ = create_publisher<msg::GimbalAttitude>("attitude", 10);
+  status_pub_ = create_publisher<msg::GimbalStatus>("status", 10);
+  temperature_pub_ = create_publisher<msg::ThermalData>("thermal/temperature", 10);
+
+  client_->onLog([this](const std::string & m) {RCLCPP_INFO(get_logger(), "%s", m.c_str());});
+  client_->onAttitude([this](const Attitude & a) {
+      msg::GimbalAttitude m;
+      m.header.stamp = now();
+      m.header.frame_id = frame_id_;
+      m.yaw = a.yaw;
+      m.pitch = a.pitch;
+      m.roll = a.roll;
+      m.yaw_rate = a.yaw_rate;
+      m.pitch_rate = a.pitch_rate;
+      m.roll_rate = a.roll_rate;
+      attitude_pub_->publish(m);
+    });
+  client_->onFrameTemperature([this](const Temperature & t) {temperature_pub_->publish(toMsg(t));});
+
+  request_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+  ptz_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+
+  rclcpp::SubscriptionOptions sub_opts;
+  sub_opts.callback_group = ptz_group_;
+  ptz_sub_ = create_subscription<geometry_msgs::msg::Twist>(
+    "ptz_cmd", 10, std::bind(&UnipodDriverNode::onPtzCmd, this, _1), sub_opts);
+  ptz_timer_ = create_wall_timer(50ms, std::bind(&UnipodDriverNode::ptzWatchdog, this), ptz_group_);
+
+  const auto qos = rmw_qos_profile_services_default;
+  set_angle_srv_ = create_service<srv::SetGimbalAngle>(
+    "set_angle",
+    [this](const std::shared_ptr<srv::SetGimbalAngle::Request> req,
+    std::shared_ptr<srv::SetGimbalAngle::Response> res) {
+      auto a = client_->setAngle(req->yaw, req->pitch);
+      res->success = a.has_value();
+      if (a) {
+        res->yaw = a->yaw;
+        res->pitch = a->pitch;
+        res->roll = a->roll;
+      }
+      res->message = a ? "ok" : "no reply from the pod";
+    }, qos, request_group_);
+
+  recenter_srv_ = create_service<srv::Recenter>(
+    "recenter",
+    [this](const std::shared_ptr<srv::Recenter::Request> req,
+    std::shared_ptr<srv::Recenter::Response> res) {
+      const uint8_t mode = req->mode == 0 ? srv::Recenter::Request::RESET : req->mode;
+      if (mode > srv::Recenter::Request::FACE_DOWN) {
+        res->success = false;
+        res->message = "mode must be 1..4";
         return;
-    }
-    
-    // Setup receive callback
-    comm_->setReceiveCallback(
-        std::bind(&UnipodDriverNode::handleReceivedData, this, _1));
-    
-    // Start heartbeat for TCP
-    if (connection_type_ == "tcp") {
-        comm_->startHeartbeat(1000);
-    }
-    
-    initializeTimers();
-    
-    // Request initial status
-    auto firmware_packet = protocol_->createRequestFirmwarePacket();
-    comm_->sendData(firmware_packet);
-    
-    // Enable attitude data stream
-    auto attitude_stream = protocol_->createRequestDataStreamPacket(1, 4); // 10Hz
-    comm_->sendData(attitude_stream);
-    
-    RCLCPP_INFO(this->get_logger(), "Unipod Driver Node initialized successfully");
-}
+      }
+      res->success = client_->recenter(static_cast<CenterMode>(mode));
+      res->message = res->success ? "ok" : "rejected or no reply";
+    }, qos, request_group_);
 
-UnipodDriverNode::~UnipodDriverNode() {
-    if (comm_) {
-        comm_->disconnect();
-    }
-}
+  zoom_srv_ = create_service<srv::ZoomControl>(
+    "zoom",
+    [this](const std::shared_ptr<srv::ZoomControl::Request> req,
+    std::shared_ptr<srv::ZoomControl::Response> res) {
+      auto z = client_->zoom(req->command);
+      res->success = z.has_value();
+      res->zoom = z.value_or(0.0f);
+      res->message = z ? "ok" : "no reply from the pod";
+    }, qos, request_group_);
 
-void UnipodDriverNode::initializeParameters() {
-    this->declare_parameter("connection_type", "tcp");
-    this->declare_parameter("ip_address", "192.168.144.25");
-    this->declare_parameter("port", 37260);
-    this->declare_parameter("serial_device", "/dev/ttyUSB0");
-    this->declare_parameter("serial_baudrate", 115200);
-    this->declare_parameter("attitude_rate", 10);
-    this->declare_parameter("status_rate", 1);
-    
-    connection_type_ = this->get_parameter("connection_type").as_string();
-    ip_address_ = this->get_parameter("ip_address").as_string();
-    port_ = this->get_parameter("port").as_int();
-    serial_device_ = this->get_parameter("serial_device").as_string();
-    serial_baudrate_ = this->get_parameter("serial_baudrate").as_int();
-    attitude_rate_ = this->get_parameter("attitude_rate").as_int();
-    status_rate_ = this->get_parameter("status_rate").as_int();
-    
-    RCLCPP_INFO(this->get_logger(), "Parameters loaded:");
-    RCLCPP_INFO(this->get_logger(), "  Connection: %s", connection_type_.c_str());
-    if (connection_type_ != "serial") {
-        RCLCPP_INFO(this->get_logger(), "  Address: %s:%d", ip_address_.c_str(), port_);
-    } else {
-        RCLCPP_INFO(this->get_logger(), "  Device: %s @ %d baud", 
-                    serial_device_.c_str(), serial_baudrate_);
-    }
-}
-
-void UnipodDriverNode::initializePublishers() {
-    gimbal_attitude_pub_ = this->create_publisher<msg::GimbalAttitude>(
-        "~/gimbal_attitude", 10);
-    gimbal_status_pub_ = this->create_publisher<msg::GimbalStatus>(
-        "~/gimbal_status", 10);
-    camera_status_pub_ = this->create_publisher<msg::CameraStatus>(
-        "~/camera_status", 10);
-    thermal_data_pub_ = this->create_publisher<msg::ThermalData>(
-        "~/thermal_data", 10);
-    laser_data_pub_ = this->create_publisher<msg::LaserData>(
-        "~/laser_data", 10);
-    ai_tracking_pub_ = this->create_publisher<msg::AITrackingData>(
-        "~/ai_tracking", 10);
-    firmware_pub_ = this->create_publisher<msg::FirmwareVersion>(
-        "~/firmware_version", 10);
-}
-
-void UnipodDriverNode::initializeSubscribers() {
-    gimbal_velocity_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
-        "~/gimbal_velocity_cmd", 10,
-        std::bind(&UnipodDriverNode::gimbalVelocityCallback, this, _1));
-}
-
-void UnipodDriverNode::initializeServices() {
-    gimbal_control_srv_ = this->create_service<srv::GimbalControl>(
-        "~/gimbal_control",
-        std::bind(&UnipodDriverNode::handleGimbalControl, this, _1, _2));
-    
-    camera_control_srv_ = this->create_service<srv::CameraControl>(
-        "~/camera_control",
-        std::bind(&UnipodDriverNode::handleCameraControl, this, _1, _2));
-    
-    focus_control_srv_ = this->create_service<srv::FocusControl>(
-        "~/focus_control",
-        std::bind(&UnipodDriverNode::handleFocusControl, this, _1, _2));
-    
-    zoom_control_srv_ = this->create_service<srv::ZoomControl>(
-        "~/zoom_control",
-        std::bind(&UnipodDriverNode::handleZoomControl, this, _1, _2));
-    
-    set_angle_srv_ = this->create_service<srv::SetGimbalAngle>(
-        "~/set_gimbal_angle",
-        std::bind(&UnipodDriverNode::handleSetGimbalAngle, this, _1, _2));
-    
-    set_video_mode_srv_ = this->create_service<srv::SetVideoMode>(
-        "~/set_video_mode",
-        std::bind(&UnipodDriverNode::handleSetVideoMode, this, _1, _2));
-    
-    thermal_control_srv_ = this->create_service<srv::ThermalControl>(
-        "~/thermal_control",
-        std::bind(&UnipodDriverNode::handleThermalControl, this, _1, _2));
-    
-    recenter_srv_ = this->create_service<std_srvs::srv::Trigger>(
-        "~/recenter_gimbal",
-        std::bind(&UnipodDriverNode::handleRecenterGimbal, this, _1, _2));
-}
-
-void UnipodDriverNode::initializeTimers() {
-    if (status_rate_ > 0) {
-        status_timer_ = this->create_wall_timer(
-            std::chrono::milliseconds(1000 / status_rate_),
-            std::bind(&UnipodDriverNode::statusUpdateTimer, this));
-    }
-}
-
-bool UnipodDriverNode::connectToGimbal() {
-    bool success = false;
-    
-    if (connection_type_ == "tcp") {
-        success = comm_->connectTCP(ip_address_, port_);
-    } else if (connection_type_ == "udp") {
-        success = comm_->connectUDP(ip_address_, port_);
-    } else if (connection_type_ == "serial") {
-        success = comm_->connectSerial(serial_device_, serial_baudrate_);
-    } else {
-        RCLCPP_ERROR(this->get_logger(), "Invalid connection type: %s", 
-                     connection_type_.c_str());
-        return false;
-    }
-    
-    if (success) {
-        RCLCPP_INFO(this->get_logger(), "Connected to Unipod gimbal");
-    }
-    
-    return success;
-}
-
-void UnipodDriverNode::handleReceivedData(const std::vector<uint8_t>& data) {
-    // Verify CRC
-    if (!protocol_->verifyCRC(data)) {
-        RCLCPP_WARN(this->get_logger(), "CRC verification failed");
+  set_zoom_srv_ = create_service<srv::SetZoom>(
+    "set_zoom",
+    [this](const std::shared_ptr<srv::SetZoom::Request> req,
+    std::shared_ptr<srv::SetZoom::Response> res) {
+      float zoom_max;
+      {
+        std::lock_guard<std::mutex> lk(state_mtx_);
+        zoom_max = status_.zoom_max;
+      }
+      if (zoom_max > 0.0f && (req->zoom < 1.0f || req->zoom > zoom_max)) {
+        res->success = false;
+        res->zoom_max = zoom_max;
+        res->message = "zoom must be 1.0 .. " + std::to_string(zoom_max);
         return;
-    }
-    
-    // Parse packet
-    PacketHeader header;
-    std::vector<uint8_t> payload;
-    
-    if (!protocol_->parsePacket(data, header, payload)) {
-        RCLCPP_WARN(this->get_logger(), "Failed to parse packet");
-        return;
-    }
-    
-    // Process the packet
-    processPacket(header, payload);
-}
+      }
+      res->success = client_->setZoom(req->zoom);
+      res->zoom = client_->getZoom().value_or(0.0f);
+      res->zoom_max = zoom_max;
+      res->message = res->success ? "ok" : "rejected or no reply";
+    }, qos, request_group_);
 
-void UnipodDriverNode::processPacket(const PacketHeader& header, 
-                                 const std::vector<uint8_t>& data) {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    
-    switch (header.cmd_id) {
-        case CMD_FIRMWARE_VERSION: {
-            if (data.size() >= 12) {
-                msg::FirmwareVersion msg;
-                msg.header.stamp = this->now();
-                msg.camera_firmware_version = data[0] | (data[1] << 8) | 
-                                             (data[2] << 16) | (data[3] << 24);
-                msg.gimbal_firmware_version = data[4] | (data[5] << 8) | 
-                                             (data[6] << 16) | (data[7] << 24);
-                msg.zoom_firmware_version = data[8] | (data[9] << 8) | 
-                                           (data[10] << 16) | (data[11] << 24);
-                firmware_pub_->publish(msg);
-            }
-            break;
-        }
-        
-        case CMD_GIMBAL_ATTITUDE: {
-            if (data.size() >= 12) {
-                int16_t yaw = data[0] | (data[1] << 8);
-                int16_t pitch = data[2] | (data[3] << 8);
-                int16_t roll = data[4] | (data[5] << 8);
-                int16_t yaw_vel = data[6] | (data[7] << 8);
-                int16_t pitch_vel = data[8] | (data[9] << 8);
-                int16_t roll_vel = data[10] | (data[11] << 8);
-                
-                current_attitude_.header.stamp = this->now();
-                current_attitude_.yaw = yaw / 10.0f;
-                current_attitude_.pitch = pitch / 10.0f;
-                current_attitude_.roll = roll / 10.0f;
-                current_attitude_.yaw_velocity = yaw_vel / 10.0f;
-                current_attitude_.pitch_velocity = pitch_vel / 10.0f;
-                current_attitude_.roll_velocity = roll_vel / 10.0f;
-                
-                gimbal_attitude_pub_->publish(current_attitude_);
-            }
-            break;
-        }
-        
-        case CMD_LASER_RANGING: {
-            if (data.size() >= 2) {
-                uint16_t distance_dm = data[0] | (data[1] << 8);
-                
-                msg::LaserData msg;
-                msg.header.stamp = this->now();
-                msg.distance = (distance_dm >= 50) ? (distance_dm / 10.0f) : 0.0f;
-                laser_data_pub_->publish(msg);
-            }
-            break;
-        }
-        
-        case CMD_AI_TRACKING_DATA: {
-            if (data.size() >= 10) {
-                msg::AITrackingData msg;
-                msg.header.stamp = this->now();
-                msg.pos_x = data[0] | (data[1] << 8);
-                msg.pos_y = data[2] | (data[3] << 8);
-                msg.width = data[4] | (data[5] << 8);
-                msg.height = data[6] | (data[7] << 8);
-                msg.target_id = data[8];
-                msg.tracking_status = data[9];
-                ai_tracking_pub_->publish(msg);
-            }
-            break;
-        }
-        
-        case CMD_CAMERA_INFO: {
-            if (data.size() >= 8) {
-                current_camera_status_.header.stamp = this->now();
-                current_camera_status_.hdr_enabled = (data[1] == 1);
-                current_camera_status_.recording = (data[3] == 1);
-                current_camera_status_.tf_card_present = (data[3] != 2);
-                current_status_.motion_mode = data[4];
-                current_status_.mounting_direction = data[5];
-                current_camera_status_.video_output_mode = data[6];
-                current_camera_status_.zoom_linkage_enabled = (data[7] == 1);
-                
-                camera_status_pub_->publish(current_camera_status_);
-            }
-            break;
-        }
-        
+  video_mode_srv_ = create_service<srv::SetVideoMode>(
+    "set_video_mode",
+    [this](const std::shared_ptr<srv::SetVideoMode::Request> req,
+    std::shared_ptr<srv::SetVideoMode::Response> res) {
+      auto m = client_->setVideoMode(req->main_stream, req->sub_stream);
+      res->success = m && m->main == req->main_stream && m->sub == req->sub_stream;
+      if (m) {
+        res->main_stream = m->main;
+        res->sub_stream = m->sub;
+        res->message = "main " + streamName(m->main) + ", sub " + streamName(m->sub);
+      } else {
+        res->message = "no reply from the pod";
+      }
+    }, qos, request_group_);
+
+  temperature_srv_ = create_service<srv::GetTemperature>(
+    "get_temperature",
+    [this](const std::shared_ptr<srv::GetTemperature::Request> req,
+    std::shared_ptr<srv::GetTemperature::Response> res) {
+      std::optional<Temperature> t;
+      switch (req->mode) {
+        case srv::GetTemperature::Request::POINT:
+          t = client_->pointTemperature(req->x, req->y);
+          break;
+        case srv::GetTemperature::Request::REGION:
+          t = client_->regionTemperature(req->x, req->y, req->x2, req->y2);
+          break;
+        case srv::GetTemperature::Request::FRAME:
+          t = client_->frameTemperature();
+          break;
         default:
-            // Handle other command responses
-            break;
-    }
-}
+          res->success = false;
+          res->message = "mode must be POINT (0), REGION (1) or FRAME (2)";
+          return;
+      }
+      res->success = t.has_value();
+      if (t) {
+        res->data = toMsg(*t);
+      }
+      res->message = t ? "ok" : "no reply from the pod";
+    }, qos, request_group_);
 
-// Service handlers implementation continues...
-void UnipodDriverNode::handleGimbalControl(
-    const std::shared_ptr<srv::GimbalControl::Request> request,
-    std::shared_ptr<srv::GimbalControl::Response> response) {
-    
-    auto packet = protocol_->createGimbalRotationPacket(
-        request->yaw_speed, request->pitch_speed);
-    
-    response->success = comm_->sendData(packet);
-    response->message = response->success ? "Command sent" : "Failed to send command";
-}
-
-void UnipodDriverNode::handleCameraControl(
-    const std::shared_ptr<srv::CameraControl::Request> request,
-    std::shared_ptr<srv::CameraControl::Response> response) {
-    
-    auto packet = protocol_->createPhotoVideoPacket(request->command);
-    response->success = comm_->sendData(packet);
-    response->message = response->success ? "Command sent" : "Failed to send command";
-}
-
-void UnipodDriverNode::handleFocusControl(
-    const std::shared_ptr<srv::FocusControl::Request> request,
-    std::shared_ptr<srv::FocusControl::Response> response) {
-    
-    std::vector<uint8_t> data(5);
-    data[0] = request->auto_focus ? 1 : 0;
-    data[1] = request->touch_x & 0xFF;
-    data[2] = (request->touch_x >> 8) & 0xFF;
-    data[3] = request->touch_y & 0xFF;
-    data[4] = (request->touch_y >> 8) & 0xFF;
-    
-    auto packet = protocol_->createPacket(CMD_AUTO_FOCUS, data, true);
-    response->success = comm_->sendData(packet);
-    response->message = response->success ? "Focus command sent" : "Failed to send command";
-}
-
-void UnipodDriverNode::handleZoomControl(
-    const std::shared_ptr<srv::ZoomControl::Request> request,
-    std::shared_ptr<srv::ZoomControl::Response> response) {
-    
-    std::vector<uint8_t> packet;
-    
-    if (request->absolute_zoom > 0.0f) {
-        uint8_t zoom_int = static_cast<uint8_t>(request->absolute_zoom);
-        uint8_t zoom_float = static_cast<uint8_t>((request->absolute_zoom - zoom_int) * 10);
-        packet = protocol_->createAbsoluteZoomPacket(zoom_int, zoom_float);
-    } else {
-        packet = protocol_->createZoomPacket(request->zoom_command);
-    }
-    
-    response->success = comm_->sendData(packet);
-    response->current_zoom = 0.0f; // Will be updated by response
-    response->message = response->success ? "Zoom command sent" : "Failed to send command";
-}
-
-void UnipodDriverNode::handleSetGimbalAngle(
-    const std::shared_ptr<srv::SetGimbalAngle::Request> request,
-    std::shared_ptr<srv::SetGimbalAngle::Response> response) {
-    
-    int16_t yaw = static_cast<int16_t>(request->yaw * 10.0f);
-    int16_t pitch = static_cast<int16_t>(request->pitch * 10.0f);
-    
-    auto packet = protocol_->createSetGimbalAnglePacket(yaw, pitch);
-    response->success = comm_->sendData(packet);
-    
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    response->current_yaw = current_attitude_.yaw;
-    response->current_pitch = current_attitude_.pitch;
-    response->current_roll = current_attitude_.roll;
-    response->message = response->success ? "Angle command sent" : "Failed to send command";
-}
-
-void UnipodDriverNode::handleSetVideoMode(
-    const std::shared_ptr<srv::SetVideoMode::Request> request,
-    std::shared_ptr<srv::SetVideoMode::Response> response) {
-    
-    std::vector<uint8_t> data = {request->main_stream, request->sub_stream};
-    auto packet = protocol_->createPacket(CMD_SET_VIDEO_MODE, data, true);
-    
-    response->success = comm_->sendData(packet);
-    response->current_main_stream = request->main_stream;
-    response->current_sub_stream = request->sub_stream;
-    response->message = response->success ? "Video mode set" : "Failed to send command";
-}
-
-void UnipodDriverNode::handleThermalControl(
-    const std::shared_ptr<srv::ThermalControl::Request> request,
-    std::shared_ptr<srv::ThermalControl::Response> response) {
-    
-    std::vector<uint8_t> packet;
-    
-    switch (request->command) {
-        case 0: { // Set palette
-            std::vector<uint8_t> data = {request->palette_mode};
-            packet = protocol_->createPacket(CMD_SET_THERMAL_PALETTE, data, true);
-            break;
-        }
-        case 1: { // Set gain
-            std::vector<uint8_t> data = {request->gain_mode};
-            packet = protocol_->createPacket(CMD_SET_THERMAL_GAIN, data, true);
-            break;
-        }
-        case 4: { // Update shutter
-            packet = protocol_->createPacket(CMD_UPDATE_THERMAL_SHUTTER, {}, true);
-            break;
-        }
-        default:
-            response->success = false;
-            response->message = "Unknown thermal command";
+  thermal_srv_ = create_service<srv::ThermalControl>(
+    "thermal_control",
+    [this](const std::shared_ptr<srv::ThermalControl::Request> req,
+    std::shared_ptr<srv::ThermalControl::Response> res) {
+      using R = srv::ThermalControl::Request;
+      std::optional<uint8_t> v;
+      switch (req->command) {
+        case R::SET_PALETTE:
+          if (req->value > kGloryHot || req->value == 1) {
+            res->message = "palette must be 0 or 2..11";
             return;
+          }
+          v = client_->setPalette(req->value);
+          break;
+        case R::SET_GAIN:
+          v = client_->setThermalGain(req->value);
+          break;
+        case R::REFRESH_SHUTTER:
+          v = client_->refreshShutter() ? std::optional<uint8_t>(1) : std::nullopt;
+          break;
+        default:
+          res->message = "command must be SET_PALETTE (0), SET_GAIN (1) or REFRESH_SHUTTER (2)";
+          return;
+      }
+      res->success = v.has_value();
+      res->value = v.value_or(0);
+      res->message = v ? "ok" : "rejected or no reply";
+    }, qos, request_group_);
+
+  const double status_hz = get_parameter("status_rate_hz").as_double();
+  status_timer_ = create_wall_timer(
+    std::chrono::duration<double>(1.0 / (status_hz > 0.0 ? status_hz : 1.0)),
+    std::bind(&UnipodDriverNode::statusTick, this), request_group_);
+
+  RCLCPP_INFO(get_logger(), "connecting to the UniPod over %s", client_->describe().c_str());
+  client_->start();
+}
+
+UnipodDriverNode::~UnipodDriverNode()
+{
+  if (client_) {
+    client_->rotate(0, 0);
+    client_->stop();
+  }
+}
+
+void UnipodDriverNode::declareParameters()
+{
+  declare_parameter("transport", "tcp");
+  declare_parameter("ip", "192.168.144.25");
+  declare_parameter("port", 37260);
+  declare_parameter("serial_device", "/dev/ttyUSB0");
+  declare_parameter("serial_baudrate", 115200);
+  declare_parameter("request_timeout_ms", 500);
+  frame_id_ = declare_parameter("frame_id", "unipod_gimbal");
+  thermal_frame_id_ = declare_parameter("thermal_frame_id", "unipod_thermal");
+  declare_parameter("status_rate_hz", 1.0);
+  attitude_rate_ = nearestStreamRate(declare_parameter("attitude_rate_hz", 10.0));
+  ptz_max_speed_ = static_cast<int>(declare_parameter("ptz_max_speed", 100));
+  ptz_timeout_sec_ = declare_parameter("ptz_cmd_timeout", 0.5);
+  invert_yaw_ = declare_parameter("invert_yaw", false);
+  invert_pitch_ = declare_parameter("invert_pitch", false);
+  main_stream_ = static_cast<int>(declare_parameter("main_stream", -1));
+  sub_stream_ = static_cast<int>(declare_parameter("sub_stream", -1));
+  thermal_palette_ = static_cast<int>(declare_parameter("thermal_palette", -1));
+  thermal_gain_ = static_cast<int>(declare_parameter("thermal_gain", -1));
+  temperature_stream_ = declare_parameter("temperature_stream", true);
+}
+
+msg::ThermalData UnipodDriverNode::toMsg(const Temperature & t)
+{
+  msg::ThermalData m;
+  m.header.stamp = now();
+  m.header.frame_id = thermal_frame_id_;
+  m.mode = static_cast<uint8_t>(t.mode);
+  m.x1 = t.x1;
+  m.y1 = t.y1;
+  m.x2 = t.x2;
+  m.y2 = t.y2;
+  m.temp_max = t.max_c;
+  m.temp_min = t.min_c;
+  m.max_x = t.max_x;
+  m.max_y = t.max_y;
+  m.min_x = t.min_x;
+  m.min_y = t.min_y;
+  return m;
+}
+
+// Runs on every link-up (first connect and after the pod rebooted or the cable came back).
+void UnipodDriverNode::onLinkUp()
+{
+  if (auto fw = client_->getFirmware()) {
+    RCLCPP_INFO(get_logger(), "UniPod firmware: camera %s, gimbal %s%s", fw->camera.c_str(),
+      fw->gimbal.c_str(),
+      fw->camera == "v0.0.0" ? " (camera still booting, up to 30 s)" : "");
+    std::lock_guard<std::mutex> lk(state_mtx_);
+    status_.camera_firmware = fw->camera;
+    status_.gimbal_firmware = fw->gimbal;
+  }
+  if (auto zmax = client_->getMaxZoom()) {
+    std::lock_guard<std::mutex> lk(state_mtx_);
+    status_.zoom_max = *zmax;
+  }
+  if (attitude_rate_ != kRateOff && !client_->setAttitudeStream(attitude_rate_)) {
+    RCLCPP_WARN(get_logger(), "attitude stream request not acknowledged");
+  }
+  if (main_stream_ >= 0 && sub_stream_ >= 0) {
+    auto m = client_->setVideoMode(
+      static_cast<uint8_t>(main_stream_), static_cast<uint8_t>(sub_stream_));
+    if (m && m->main == main_stream_ && m->sub == sub_stream_) {
+      RCLCPP_INFO(get_logger(), "video: main %s, sub %s", streamName(m->main).c_str(),
+        streamName(m->sub).c_str());
+    } else {
+      RCLCPP_WARN(get_logger(), "video mode main %d / sub %d not taken (pod reports %s / %s)",
+        main_stream_, sub_stream_, m ? streamName(m->main).c_str() : "-",
+        m ? streamName(m->sub).c_str() : "-");
     }
-    
-    response->success = comm_->sendData(packet);
-    response->temperature = 0.0f;
-    response->message = response->success ? "Thermal command sent" : "Failed to send command";
+  }
+  if (thermal_palette_ >= 0) {
+    client_->setPalette(static_cast<uint8_t>(thermal_palette_));
+  }
+  if (thermal_gain_ >= 0) {
+    client_->setThermalGain(static_cast<uint8_t>(thermal_gain_));
+  }
+  client_->setFrameTemperatureStream(temperature_stream_);
+
+  for (uint8_t s : {uint8_t{1}, uint8_t{2}}) {
+    if (auto e = client_->getEncoding(s)) {
+      RCLCPP_INFO(get_logger(), "rtsp video%u: %s %ux%u %u fps %u kbps", s,
+        e->codec == 2 ? "H265" : "H264", e->width, e->height, e->fps, e->bitrate_kbps);
+    }
+  }
 }
 
-void UnipodDriverNode::handleRecenterGimbal(
-    const std::shared_ptr<std_srvs::srv::Trigger::Request>,
-    std::shared_ptr<std_srvs::srv::Trigger::Response> response) {
-    
-    std::vector<uint8_t> data = {1}; // One-key reset
-    auto packet = protocol_->createPacket(CMD_GIMBAL_CENTER, data, true);
-    
-    response->success = comm_->sendData(packet);
-    response->message = response->success ? "Gimbal recentered" : "Failed to send command";
+void UnipodDriverNode::statusTick()
+{
+  const bool up = client_->linkUp();
+  if (up && !was_up_) {
+    onLinkUp();
+  } else if (!up && was_up_) {
+    RCLCPP_WARN(get_logger(), "lost the UniPod on %s", client_->describe().c_str());
+  }
+  was_up_ = up;
+
+  msg::GimbalStatus s;
+  {
+    std::lock_guard<std::mutex> lk(state_mtx_);
+    s = status_;
+  }
+  if (up) {
+    if (auto z = client_->getZoom()) {s.zoom = *z;}
+    if (auto m = client_->getVideoMode()) {
+      s.main_stream = m->main;
+      s.sub_stream = m->sub;
+    }
+    if (auto p = client_->getPalette()) {s.thermal_palette = *p;}
+    if (auto g = client_->getThermalGain()) {s.thermal_gain = *g;}
+  }
+  s.connected = up;
+  s.header.stamp = now();
+  s.header.frame_id = frame_id_;
+  {
+    std::lock_guard<std::mutex> lk(state_mtx_);
+    status_ = s;
+  }
+  status_pub_->publish(s);
 }
 
-void UnipodDriverNode::gimbalVelocityCallback(const geometry_msgs::msg::Twist::SharedPtr msg) {
-    // Map twist to gimbal speeds (-100 to 100)
-    int8_t yaw_speed = static_cast<int8_t>(std::max(-100.0, std::min(100.0, msg->angular.z * 100.0)));
-    int8_t pitch_speed = static_cast<int8_t>(std::max(-100.0, std::min(100.0, msg->angular.y * 100.0)));
-    
-    auto packet = protocol_->createGimbalRotationPacket(yaw_speed, pitch_speed);
-    comm_->sendData(packet);
+void UnipodDriverNode::onPtzCmd(const geometry_msgs::msg::Twist::SharedPtr msg)
+{
+  const auto yaw = axisToSpeed((invert_yaw_ ? -1.0 : 1.0) * msg->angular.z, ptz_max_speed_);
+  const auto pitch = axisToSpeed((invert_pitch_ ? -1.0 : 1.0) * msg->angular.y, ptz_max_speed_);
+  const auto zoom = axisToZoom(msg->linear.z);
+  {
+    std::lock_guard<std::mutex> lk(ptz_mtx_);
+    last_ptz_cmd_ = Clock::now();
+  }
+  sendPtz(yaw, pitch, zoom);
 }
 
-void UnipodDriverNode::statusUpdateTimer() {
-    // Request camera system info
-    auto info_packet = protocol_->createPacket(CMD_CAMERA_INFO, {}, true);
-    comm_->sendData(info_packet);
-    
-    // Publish current status
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    current_status_.header.stamp = this->now();
-    gimbal_status_pub_->publish(current_status_);
+void UnipodDriverNode::sendPtz(int8_t yaw, int8_t pitch, int8_t zoom)
+{
+  std::lock_guard<std::mutex> lk(ptz_mtx_);
+  if (yaw != last_yaw_ || pitch != last_pitch_ || yaw != 0 || pitch != 0) {
+    client_->rotate(yaw, pitch);
+  }
+  if (zoom != last_zoom_) {
+    client_->send(protocol::cmd::kManualZoom, protocol::Writer().i8(zoom).bytes());
+  }
+  last_yaw_ = yaw;
+  last_pitch_ = pitch;
+  last_zoom_ = zoom;
 }
 
-} // namespace unipod_driver
+void UnipodDriverNode::ptzWatchdog()
+{
+  bool moving;
+  Clock::time_point last;
+  {
+    std::lock_guard<std::mutex> lk(ptz_mtx_);
+    moving = last_yaw_ != 0 || last_pitch_ != 0 || last_zoom_ != 0;
+    last = last_ptz_cmd_;
+  }
+  if (moving && Clock::now() - last > std::chrono::duration<double>(ptz_timeout_sec_)) {
+    RCLCPP_INFO(get_logger(), "no ptz_cmd for %.2f s, stopping", ptz_timeout_sec_);
+    sendPtz(0, 0, 0);
+  }
+}
 
-int main(int argc, char** argv) {
-    rclcpp::init(argc, argv);
+}  // namespace unipod_driver
+
+int main(int argc, char ** argv)
+{
+  rclcpp::init(argc, argv);
+  int code = 0;
+  try {
     auto node = std::make_shared<unipod_driver::UnipodDriverNode>();
-    rclcpp::spin(node);
-    rclcpp::shutdown();
-    return 0;
+    rclcpp::executors::MultiThreadedExecutor exec(rclcpp::ExecutorOptions(), 3);
+    exec.add_node(node);
+    exec.spin();
+  } catch (const std::exception & e) {
+    RCLCPP_FATAL(rclcpp::get_logger("unipod_driver"), "%s", e.what());
+    code = 1;
+  }
+  rclcpp::shutdown();
+  return code;
 }
