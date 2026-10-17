@@ -16,6 +16,9 @@ find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(Threads REQUIRED)
+find_package(OpenCV REQUIRED COMPONENTS core imgproc videoio)
+find_package(cv_bridge REQUIRED)
+find_package(image_transport REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/GimbalAttitude.msg"
@@ -49,12 +52,25 @@ add_executable(unipod_driver_node src/unipod_driver_node.cpp)
 target_link_libraries(unipod_driver_node unipod_client "${cpp_typesupport_target}")
 ament_target_dependencies(unipod_driver_node rclcpp std_msgs geometry_msgs)
 
-install(TARGETS unipod_client
+# RTSP capture (OpenCV, no ROS) and the camera node: one per stream, video1 / video2
+add_library(unipod_rtsp SHARED src/rtsp_capture.cpp)
+target_include_directories(unipod_rtsp PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+target_include_directories(unipod_rtsp SYSTEM PUBLIC ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(unipod_rtsp ${OpenCV_LIBS} Threads::Threads)
+
+add_executable(unipod_camera_node src/unipod_camera_node.cpp)
+target_link_libraries(unipod_camera_node unipod_rtsp)
+ament_target_dependencies(unipod_camera_node rclcpp cv_bridge image_transport)
+
+install(TARGETS unipod_client unipod_rtsp
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
 )
-install(TARGETS unipod_driver_node DESTINATION lib/${PROJECT_NAME})
+install(TARGETS unipod_driver_node unipod_camera_node DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY include/ DESTINATION include)
 install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
 
@@ -68,6 +84,8 @@ if(BUILD_TESTING)
   target_link_libraries(test_transport unipod_client)
   ament_add_gtest(test_types test/test_types.cpp)
   target_include_directories(test_types PRIVATE include)
+  ament_add_gtest(test_rtsp test/test_rtsp.cpp TIMEOUT 60)
+  target_link_libraries(test_rtsp unipod_rtsp)
 endif()
 
 ament_export_dependencies(rosidl_default_runtime)
