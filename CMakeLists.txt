@@ -33,7 +33,6 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/ZoomControl.srv"
   DEPENDENCIES std_msgs
 )
-rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} rosidl_typesupport_cpp)
 
 # ROS-free client: protocol, transports, request/ACK handling
 add_library(unipod_client SHARED
@@ -49,8 +48,15 @@ target_link_libraries(unipod_client Threads::Threads)
 
 # Driver node: PTZ, zoom, video streams, thermal, recenter
 add_executable(unipod_driver_node src/unipod_driver_node.cpp)
-target_link_libraries(unipod_driver_node unipod_client "${cpp_typesupport_target}")
+target_link_libraries(unipod_driver_node unipod_client)
 ament_target_dependencies(unipod_driver_node rclcpp std_msgs geometry_msgs)
+# Foxy: rosidl_target_interfaces (rosidl_get_typesupport_target only exists from Humble on)
+if(COMMAND rosidl_get_typesupport_target)
+  rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} rosidl_typesupport_cpp)
+  target_link_libraries(unipod_driver_node "${cpp_typesupport_target}")
+else()
+  rosidl_target_interfaces(unipod_driver_node ${PROJECT_NAME} rosidl_typesupport_cpp)
+endif()
 
 # RTSP capture (OpenCV, no ROS) and the camera node: one per stream, video1 / video2
 add_library(unipod_rtsp SHARED src/rtsp_capture.cpp)

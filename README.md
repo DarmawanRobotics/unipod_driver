@@ -6,10 +6,10 @@
 streams as images, and the thermal camera's temperatures in °C.**
 
 [![CI](https://github.com/DarmawanRobotics/unipod_driver/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/DarmawanRobotics/unipod_driver/actions/workflows/ci.yml)
-[![ROS 2](https://img.shields.io/badge/ROS%202-Humble-22314E?logo=ros&logoColor=white)](https://docs.ros.org/en/humble/)
-[![Ubuntu](https://img.shields.io/badge/Ubuntu-22.04-E95420?logo=ubuntu&logoColor=white)](https://releases.ubuntu.com/22.04/)
+[![ROS 2](https://img.shields.io/badge/ROS%202-Foxy-22314E?logo=ros&logoColor=white)](https://docs.ros.org/en/foxy/)
+[![Ubuntu](https://img.shields.io/badge/Ubuntu-20.04-E95420?logo=ubuntu&logoColor=white)](https://releases.ubuntu.com/20.04/)
 ![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus&logoColor=white)
-![Jetson](https://img.shields.io/badge/Jetson-HW%20decode-76B900?logo=nvidia&logoColor=white)
+![Jetson](https://img.shields.io/badge/JetPack-5-76B900?logo=nvidia&logoColor=white)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
 [Interface](#interface) · [Network](#network) · [Quick start](#quick-start) · [Usage](#usage) ·
@@ -31,7 +31,7 @@ flowchart LR
         CTL[gimbal + camera control<br/>TCP/UDP 37260] --- V1[RTSP :8554/video1<br/>main stream]
         V1 --- V2[RTSP :8554/video2<br/>sub stream]
     end
-    subgraph ROS[ROS 2 Humble, namespace /unipod]
+    subgraph ROS[ROS 2 Foxy, namespace /unipod]
         DRV[unipod_driver] --- MAIN[main/camera]
         MAIN --- SUB[sub/camera]
     end
@@ -89,14 +89,16 @@ and check `ping <ip>` before launching.
 
 ## Quick start
 
-Ubuntu 22.04, ROS 2 Humble (JetPack 6 on a Jetson).
+Ubuntu 20.04, ROS 2 Foxy (JetPack 5 on a Jetson). Foxy is end-of-life, so `rosdep` needs
+`--include-eol-distros`:
 
 ```bash
 # 1. Source and dependencies
 mkdir -p ~/ros2_ws/src && cd ~/ros2_ws/src
 git clone https://github.com/DarmawanRobotics/unipod_driver.git
 cd ~/ros2_ws
-rosdep install --from-paths src --ignore-src -y
+rosdep update --rosdistro foxy --include-eol-distros
+rosdep install --from-paths src --ignore-src -y --rosdistro foxy
 
 # 2. Build
 colcon build --packages-select unipod_driver && source install/setup.bash
@@ -236,7 +238,7 @@ bash src/unipod_driver/test/smoke_test.sh   # with the workspace sourced
   in-memory pod; `test_transport`: real UDP/TCP on loopback
 - `test_rtsp`: GStreamer pipelines, decoder order, the capture loop on a local video
 - `smoke_test.sh`: the launch file against [test/fake_pod.py](test/fake_pod.py), every topic and
-  service; CI runs all of it in a `ros:humble` container
+  service; CI runs all of it in a `ros:foxy` container
 
 ```
 unipod_driver/
