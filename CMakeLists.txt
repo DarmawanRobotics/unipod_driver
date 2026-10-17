@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.8)
 project(unipod_driver)
 
 if(NOT CMAKE_CXX_STANDARD)
@@ -10,42 +10,29 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# Find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
-find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
-find_package(std_srvs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
+find_package(Threads REQUIRED)
 
-# Generate custom messages and services
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/GimbalAttitude.msg"
   "msg/GimbalStatus.msg"
-  "msg/CameraStatus.msg"
   "msg/ThermalData.msg"
-  "msg/LaserData.msg"
-  "msg/AITrackingData.msg"
-  "msg/FirmwareVersion.msg"
-  "srv/GimbalControl.srv"
-  "srv/CameraControl.srv"
-  "srv/FocusControl.srv"
-  "srv/ZoomControl.srv"
+  "srv/GetTemperature.srv"
+  "srv/Recenter.srv"
   "srv/SetGimbalAngle.srv"
   "srv/SetVideoMode.srv"
+  "srv/SetZoom.srv"
   "srv/ThermalControl.srv"
-  DEPENDENCIES std_msgs geometry_msgs sensor_msgs
+  "srv/ZoomControl.srv"
+  DEPENDENCIES std_msgs
 )
-
-# Include directories
-include_directories(
-  include
-  ${rclcpp_INCLUDE_DIRS}
-)
+rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} rosidl_typesupport_cpp)
 
 # ROS-free client: protocol, transports, request/ACK handling
-find_package(Threads REQUIRED)
 add_library(unipod_client SHARED
   src/protocol.cpp
   src/transport.cpp
@@ -57,63 +44,19 @@ target_include_directories(unipod_client PUBLIC
 )
 target_link_libraries(unipod_client Threads::Threads)
 
-# Library for Unipod protocol
-add_library(unipod_protocol SHARED
-  src/unipod_protocol.cpp
-  src/unipod_comm.cpp
-)
+# Driver node: PTZ, zoom, video streams, thermal, recenter
+add_executable(unipod_driver_node src/unipod_driver_node.cpp)
+target_link_libraries(unipod_driver_node unipod_client "${cpp_typesupport_target}")
+ament_target_dependencies(unipod_driver_node rclcpp std_msgs geometry_msgs)
 
-ament_target_dependencies(unipod_protocol
-  rclcpp
-)
-
-rosidl_target_interfaces(unipod_protocol
-  ${PROJECT_NAME} "rosidl_typesupport_cpp")
-
-# Main node executable
-add_executable(unipod_driver_node
-  src/unipod_driver_node.cpp
-)
-
-target_link_libraries(unipod_driver_node
-  unipod_protocol
-)
-
-ament_target_dependencies(unipod_driver_node
-  rclcpp
-  std_msgs
-  sensor_msgs
-  geometry_msgs
-  std_srvs
-)
-
-rosidl_target_interfaces(unipod_driver_node
-  ${PROJECT_NAME} "rosidl_typesupport_cpp")
-
-# Install targets
-install(TARGETS
- unipod_client
- unipod_protocol
+install(TARGETS unipod_client
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
 )
-
-install(TARGETS
-  unipod_driver_node
-  DESTINATION lib/${PROJECT_NAME}
-)
-
-install(DIRECTORY
-  include/
-  DESTINATION include
-)
-
-install(DIRECTORY
-  launch
-  config
-  DESTINATION share/${PROJECT_NAME}
-)
+install(TARGETS unipod_driver_node DESTINATION lib/${PROJECT_NAME})
+install(DIRECTORY include/ DESTINATION include)
+install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
@@ -123,6 +66,9 @@ if(BUILD_TESTING)
   target_link_libraries(test_client unipod_client)
   ament_add_gtest(test_transport test/test_transport.cpp)
   target_link_libraries(test_transport unipod_client)
+  ament_add_gtest(test_types test/test_types.cpp)
+  target_include_directories(test_types PRIVATE include)
 endif()
 
+ament_export_dependencies(rosidl_default_runtime)
 ament_package()

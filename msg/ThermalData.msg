@@ -1,18 +1,22 @@
+# Temperatures from the thermal camera, degrees Celsius. Pixel coordinates are in the thermal
+# image (640x512, or 1280x1024 with AI super-resolution).
 std_msgs/Header header
 
-# Temperature measurement data
-float32 temperature
-uint16 x
-uint16 y
+uint8 POINT = 0
+uint8 REGION = 1
+uint8 FRAME = 2
+uint8 mode
 
-# For regional measurement
+# POINT: the measured point (x1, y1). REGION: the box the camera actually measured (it scales
+# with the thermal digital zoom). FRAME: unused.
+uint16 x1
+uint16 y1
+uint16 x2
+uint16 y2
+
 float32 temp_max
-float32 temp_min
-uint16 temp_max_x
-uint16 temp_max_y
-uint16 temp_min_x
-uint16 temp_min_y
-
-# Thermal camera settings
-uint8 palette_mode
-uint8 gain_mode
+float32 temp_min    # POINT: same as temp_max
+uint16 max_x
+uint16 max_y
+uint16 min_x
+uint16 min_y

@@ -1,0 +1,9 @@
+# One-key gimbal functions (0x08).
+uint8 RESET = 1         # one-key reset (also used for 0)
+uint8 CENTER_DOWN = 2   # center, then face downward
+uint8 CENTER = 3
+uint8 FACE_DOWN = 4
+uint8 mode
+---
+bool success
+string message
