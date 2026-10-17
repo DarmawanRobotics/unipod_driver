@@ -3,6 +3,8 @@
 # Topics, every service, ptz_cmd and its timeout, and both camera nodes staying up without a
 # stream. Needs a sourced workspace.
 set -u
+# ros2 CLI output into a pipe is block-buffered and lost when timeout kills it
+export PYTHONUNBUFFERED=1
 
 here="$(cd "$(dirname "$0")" && pwd)"
 work="$(mktemp -d)"
@@ -38,9 +40,14 @@ ros2 launch unipod_driver unipod_driver.launch.py transport:=udp ip:=127.0.0.1 \
 pids+=($!)
 sleep 8
 
-check "status connected" "connected: true" ros2 topic echo --once /unipod/status
-check "attitude stream" "yaw:" ros2 topic echo --once /unipod/attitude
-check "temperature stream" "temp_max: 60" ros2 topic echo --once /unipod/thermal/temperature
+# Foxy's `ros2 topic echo` has no --once: listen for a few seconds instead, with the type
+# given so it does not depend on discovery being finished
+check "status connected" "connected: true" \
+  timeout 8 ros2 topic echo /unipod/status unipod_driver/msg/GimbalStatus
+check "attitude stream" "yaw:" \
+  timeout 8 ros2 topic echo /unipod/attitude unipod_driver/msg/GimbalAttitude
+check "temperature stream" "temp_max: 60" \
+  timeout 8 ros2 topic echo /unipod/thermal/temperature unipod_driver/msg/ThermalData
 check "set_zoom" "success=True" \
   ros2 service call /unipod/set_zoom unipod_driver/srv/SetZoom "{zoom: 7.5}"
 check "zoom" "success=True, zoom=2.5" \
@@ -72,7 +79,7 @@ timeout 10 ros2 topic pub --times 5 -r 10 /unipod/ptz_cmd geometry_msgs/msg/Twis
 sleep 1.5  # ptz_cmd_timeout 0.5 s
 check "ptz_cmd rotates" "cmd 0x07 32ec" cat "$work/pod.log"   # yaw 50, pitch -20
 check "ptz_cmd timeout stops" "cmd 0x07 0000" cat "$work/pod.log"
-check "video mode applied on connect" "cmd 0x11 0002" cat "$work/pod.log"
+check "yaml applied (video mode on connect)" "cmd 0x11 0002" cat "$work/pod.log"
 check "cameras up, retrying" "cannot open rtsp://127.0.0.1:8554/video1" cat "$work/launch.log"
 check "sub camera up" "cannot open rtsp://127.0.0.1:8554/video2" cat "$work/launch.log"
 
