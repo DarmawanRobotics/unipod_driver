@@ -1,12 +1,28 @@
-unipod_driver_node:
+/**/unipod_driver:
   ros__parameters:
-    # Connection settings
-    connection_type: "tcp"  # Options: tcp, udp, serial
-    ip_address: "10.21.31.26"
+    # Link to the pod (document chapter 3). Factory IP is 192.168.144.25.
+    transport: tcp            # tcp (with heartbeat), udp or serial
+    ip: 10.21.31.26
     port: 37260
-    serial_device: "/dev/ttyUSB0"
+    serial_device: /dev/ttyUSB0
     serial_baudrate: 115200
-    
-    # Data rates (Hz)
-    attitude_rate: 10
-    status_rate: 1
+    request_timeout_ms: 500   # per attempt, one retry
+
+    frame_id: unipod_gimbal
+    thermal_frame_id: unipod_thermal
+
+    status_rate_hz: 1.0       # status poll: zoom, video mode, palette, gain
+    attitude_rate_hz: 10.0    # pushed attitude: 2, 4, 5, 10, 20, 50 or 100 (0: off)
+
+    # ptz_cmd (geometry_msgs/Twist): angular.z yaw, angular.y pitch, linear.z zoom, all -1..1
+    ptz_max_speed: 100        # gimbal speed at full stick, 0..100
+    ptz_cmd_timeout: 0.5      # s without ptz_cmd while moving: stop
+    invert_yaw: false         # default: angular.z > 0 turns right
+    invert_pitch: false       # default: angular.y > 0 tilts up
+
+    # Applied on every (re)connect; -1 leaves the pod as it is.
+    main_stream: 0            # video1: 0 zoom, 2 thermal, 3 zoom+thermal
+    sub_stream: 2             # video2: 0 zoom, 2 thermal
+    thermal_palette: -1       # 0 white hot, 3 ironbow, 10 black hot, ... (GimbalStatus.msg)
+    thermal_gain: -1          # 0 low, 1 high
+    temperature_stream: true  # full-frame max/min at 5 Hz on thermal/temperature
