@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          path: src/unipod_driver
+          path: src/unipod_driver        # holds unipod_msgs and unipod_driver
       - name: Dependencies
         run: |
           # The image predates the ROS apt key rotation (2025): fetch the current key first.
@@ -60,7 +60,7 @@ jobs:
           source install/setup.bash
           ros2 launch unipod_driver unipod_driver.launch.py --show-args > /dev/null
           result=0
-          bash src/unipod_driver/test/smoke_test.sh > smoke.txt 2>&1 || result=$?
+          bash src/unipod_driver/unipod_driver/test/smoke_test.sh > smoke.txt 2>&1 || result=$?
           cat smoke.txt
           echo "::notice title=Smoke test::$(grep -c '^ok' smoke.txt) ok, $(grep -c '^FAIL' smoke.txt) failed"
           if [ "$result" != 0 ]; then
