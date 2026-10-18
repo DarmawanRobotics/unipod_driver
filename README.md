@@ -19,6 +19,10 @@ streams as images, and the thermal camera's temperatures in °C.**
 
 ---
 
+**Docs:** [protocol summary](docs/protocol.md) · [network setup](docs/network.md) ·
+[first run on the pod](docs/first_run.md) · [troubleshooting](docs/troubleshooting.md) ·
+[messages](unipod_msgs/README.md)
+
 The MT11 takes commands over the *UniPod MT11 External SDK Protocol*
 ([docs/UniPod_MT11_External_SDK_Protocol_V0.1.0.pdf](docs/UniPod_MT11_External_SDK_Protocol_V0.1.0.pdf), V0.1.0, frames `0x6655`,
 CRC16) on TCP/UDP 37260 or TTL serial, and streams video over RTSP. This package keeps only what
