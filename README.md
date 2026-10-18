@@ -19,6 +19,10 @@ streams as images, and the thermal camera's temperatures in °C.**
 
 ---
 
+**Docs:** [protocol summary](docs/protocol.md) · [network setup](docs/network.md) ·
+[first run on the pod](docs/first_run.md) · [troubleshooting](docs/troubleshooting.md) ·
+[messages](unipod_msgs/README.md)
+
 The MT11 takes commands over the *UniPod MT11 External SDK Protocol*
 ([docs/UniPod_MT11_External_SDK_Protocol_V0.1.0.pdf](docs/UniPod_MT11_External_SDK_Protocol_V0.1.0.pdf), V0.1.0, frames `0x6655`,
 CRC16) on TCP/UDP 37260 or TTL serial, and streams video over RTSP. This package keeps only what
@@ -49,9 +53,9 @@ All names under the launch namespace (`/unipod` by default).
 | Topic | Type | |
 |---|---|---|
 | `ptz_cmd` (in) | `geometry_msgs/Twist` | `angular.z` yaw, `angular.y` pitch, `linear.z` zoom, each −1..1; stops by itself 0.5 s after the last message |
-| `attitude` | `unipod_driver/GimbalAttitude` | yaw, pitch, roll (°) and rates (°/s), pushed at `attitude_rate_hz` |
-| `status` | `unipod_driver/GimbalStatus` | connected, zoom / zoom max, what each stream carries, palette, gain, firmware |
-| `thermal/temperature` | `unipod_driver/ThermalData` | full-frame max/min (°C) and where they are, 5 Hz |
+| `attitude` | `unipod_msgs/GimbalAttitude` | yaw, pitch, roll (°) and rates (°/s), pushed at `attitude_rate_hz` |
+| `status` | `unipod_msgs/GimbalStatus` | connected, zoom / zoom max, what each stream carries, palette, gain, firmware |
+| `thermal/temperature` | `unipod_msgs/ThermalData` | full-frame max/min (°C) and where they are, 5 Hz |
 | `main/image_raw` | `sensor_msgs/Image` | `video1`: zoom camera by default |
 | `sub/image_raw` | `sensor_msgs/Image` | `video2`: thermal camera by default |
 | `*/image_raw/compressed` | `sensor_msgs/CompressedImage` | via image_transport |
@@ -101,7 +105,7 @@ rosdep update --rosdistro foxy --include-eol-distros
 rosdep install --from-paths src --ignore-src -y --rosdistro foxy
 
 # 2. Build
-colcon build --packages-select unipod_driver && source install/setup.bash
+colcon build --packages-up-to unipod_driver && source install/setup.bash
 
 # 3. Launch driver + both streams
 ros2 launch unipod_driver unipod_driver.launch.py ip:=10.21.31.26
@@ -121,11 +125,11 @@ ros2 run rqt_image_view rqt_image_view /unipod/main/image_raw
 ros2 topic pub -r 20 /unipod/ptz_cmd geometry_msgs/msg/Twist "{angular: {z: 0.3}}"
 
 # absolute angle
-ros2 service call /unipod/set_angle unipod_driver/srv/SetGimbalAngle "{yaw: 45.0, pitch: -30.0}"
+ros2 service call /unipod/set_angle unipod_msgs/srv/SetGimbalAngle "{yaw: 45.0, pitch: -30.0}"
 
 # reset / center / look down
-ros2 service call /unipod/recenter unipod_driver/srv/Recenter "{mode: 1}"
-ros2 service call /unipod/recenter unipod_driver/srv/Recenter "{mode: 4}"
+ros2 service call /unipod/recenter unipod_msgs/srv/Recenter "{mode: 1}"
+ros2 service call /unipod/recenter unipod_msgs/srv/Recenter "{mode: 4}"
 ```
 
 With a joystick: `teleop_twist_joy` remapped to `/unipod/ptz_cmd` (yaw on `angular.z`, pitch on
@@ -134,9 +138,9 @@ With a joystick: `teleop_twist_joy` remapped to `/unipod/ptz_cmd` (yaw on `angul
 **Zoom**
 
 ```bash
-ros2 service call /unipod/set_zoom unipod_driver/srv/SetZoom "{zoom: 10.0}"
-ros2 service call /unipod/zoom unipod_driver/srv/ZoomControl "{command: 1}"   # in ...
-ros2 service call /unipod/zoom unipod_driver/srv/ZoomControl "{command: 0}"   # ... stop
+ros2 service call /unipod/set_zoom unipod_msgs/srv/SetZoom "{zoom: 10.0}"
+ros2 service call /unipod/zoom unipod_msgs/srv/ZoomControl "{command: 1}"   # in ...
+ros2 service call /unipod/zoom unipod_msgs/srv/ZoomControl "{command: 0}"   # ... stop
 ```
 
 **Images**
@@ -146,7 +150,7 @@ ros2 topic hz /unipod/main/image_raw     # zoom camera (video1)
 ros2 topic hz /unipod/sub/image_raw      # thermal camera (video2)
 
 # thermal full screen on video1, zoom on video2
-ros2 service call /unipod/set_video_mode unipod_driver/srv/SetVideoMode \
+ros2 service call /unipod/set_video_mode unipod_msgs/srv/SetVideoMode \
   "{main_stream: 2, sub_stream: 0}"
 ```
 
@@ -155,14 +159,14 @@ ros2 service call /unipod/set_video_mode unipod_driver/srv/SetVideoMode \
 ```bash
 ros2 topic echo /unipod/thermal/temperature                  # frame max/min, 5 Hz
 
-ros2 service call /unipod/get_temperature unipod_driver/srv/GetTemperature \
+ros2 service call /unipod/get_temperature unipod_msgs/srv/GetTemperature \
   "{mode: 0, x: 320, y: 256}"                                # one point
-ros2 service call /unipod/get_temperature unipod_driver/srv/GetTemperature \
+ros2 service call /unipod/get_temperature unipod_msgs/srv/GetTemperature \
   "{mode: 1, x: 200, y: 200, x2: 400, y2: 400}"              # a box
 
-ros2 service call /unipod/thermal_control unipod_driver/srv/ThermalControl \
+ros2 service call /unipod/thermal_control unipod_msgs/srv/ThermalControl \
   "{command: 0, value: 0}"                                   # palette: white hot
-ros2 service call /unipod/thermal_control unipod_driver/srv/ThermalControl \
+ros2 service call /unipod/thermal_control unipod_msgs/srv/ThermalControl \
   "{command: 2}"                                             # shutter refresh (FFC)
 ```
 
@@ -176,7 +180,7 @@ thermal stream's camera node; per-pixel values are then 8-bit intensity (AGC), n
 
 ## Parameters
 
-[config/unipod_config.yaml](config/unipod_config.yaml), every one commented.
+[unipod_config.yaml](unipod_driver/config/unipod_config.yaml), every one commented.
 
 **Driver** (`unipod_driver`)
 
@@ -227,9 +231,9 @@ One stream only: add a `/**/sub/camera:` section to your copy of the YAML (`conf
 ## Develop
 
 ```bash
-colcon build --packages-select unipod_driver
+colcon build --packages-up-to unipod_driver
 colcon test --packages-select unipod_driver && colcon test-result --verbose
-bash src/unipod_driver/test/smoke_test.sh   # with the workspace sourced
+bash src/unipod_driver/unipod_driver/test/smoke_test.sh   # with the workspace sourced
 ```
 
 - `test_protocol`: every example packet of chapter 4 of the SDK document, byte for byte, and the
@@ -237,25 +241,24 @@ bash src/unipod_driver/test/smoke_test.sh   # with the workspace sourced
 - `test_client`: request/ACK, decoding, timeouts, pushed streams and reconnects against an
   in-memory pod; `test_transport`: real UDP/TCP on loopback
 - `test_rtsp`: GStreamer pipelines, decoder order, the capture loop on a local video
-- `smoke_test.sh`: the launch file against [test/fake_pod.py](test/fake_pod.py), every topic and
+- `smoke_test.sh`: the launch file against [fake_pod.py](unipod_driver/test/fake_pod.py), every topic and
   service; CI runs all of it in a `ros:foxy` container
 
 ```
-unipod_driver/
-├── include/unipod_driver/
-│   ├── protocol.hpp        framing, CRC16 (no ROS)
-│   ├── transport.hpp       UDP / TCP / serial (no ROS)
-│   ├── client.hpp          request/ACK, link supervision, typed API (no ROS)
-│   ├── rtsp_capture.hpp    RTSP capture thread (OpenCV, no ROS)
-│   └── ...
-├── src/
-│   ├── unipod_driver_node.cpp
-│   └── unipod_camera_node.cpp
-├── msg/ srv/               GimbalAttitude, GimbalStatus, ThermalData + 7 services
-├── config/unipod_config.yaml
-├── docs/                  UniPod MT11 External SDK Protocol (PDF)
-├── launch/unipod_driver.launch.py
-└── test/
+unipod_driver/                 repo
+├── unipod_msgs/               GimbalAttitude, GimbalStatus, ThermalData + 7 services
+├── unipod_driver/
+│   ├── include/unipod_driver/
+│   │   ├── protocol.hpp       framing, CRC16 (no ROS)
+│   │   ├── transport.hpp      UDP / TCP / serial (no ROS)
+│   │   ├── client.hpp         request/ACK, link supervision, typed API (no ROS)
+│   │   ├── rtsp_capture.hpp   RTSP capture thread (OpenCV, no ROS)
+│   │   └── ...
+│   ├── src/                   unipod_driver_node.cpp, unipod_camera_node.cpp, ...
+│   ├── config/unipod_config.yaml
+│   ├── launch/unipod_driver.launch.py
+│   └── test/
+└── docs/                      SDK protocol (PDF) and guides
 ```
 
 The client and capture libraries have no ROS dependency, so they can be reused in a plain C++

@@ -3,22 +3,20 @@
 <package format="3">
   <name>unipod_driver</name>
   <version>0.1.0</version>
-  <description>ROS 2 driver for the Reebot UniPod MT11 gimbal pod: PTZ, zoom, video streams, thermal, recenter</description>
+  <description>ROS 2 Foxy driver for the Reebot UniPod MT11 gimbal pod: PTZ, zoom, video streams, thermal, recenter</description>
   <maintainer email="darmawandeveloper@gmail.com">Agus Darmawan</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <buildtool_depend>rosidl_default_generators</buildtool_depend>
-
   <depend>rclcpp</depend>
   <depend>std_msgs</depend>
   <depend>geometry_msgs</depend>
+  <depend>unipod_msgs</depend>
   <depend>cv_bridge</depend>
   <depend>image_transport</depend>
   <depend>libopencv-dev</depend>
 
-  <exec_depend>rosidl_default_runtime</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <!-- RTSP decoding: rtspsrc, depayloaders/parsers, avdec_h264/h265; compressed image topics -->
   <exec_depend>gstreamer1.0-plugins-good</exec_depend>
@@ -27,8 +25,6 @@
   <exec_depend>image_transport_plugins</exec_depend>
 
   <test_depend>ament_cmake_gtest</test_depend>
-
-  <member_of_group>rosidl_interface_packages</member_of_group>
 
   <export>
     <build_type>ament_cmake</build_type>

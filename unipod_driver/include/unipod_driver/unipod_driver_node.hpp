@@ -10,19 +10,22 @@
 #include <rclcpp/rclcpp.hpp>
 
 #include "unipod_driver/client.hpp"
-#include "unipod_driver/msg/gimbal_attitude.hpp"
-#include "unipod_driver/msg/gimbal_status.hpp"
-#include "unipod_driver/msg/thermal_data.hpp"
-#include "unipod_driver/srv/get_temperature.hpp"
-#include "unipod_driver/srv/recenter.hpp"
-#include "unipod_driver/srv/set_gimbal_angle.hpp"
-#include "unipod_driver/srv/set_video_mode.hpp"
-#include "unipod_driver/srv/set_zoom.hpp"
-#include "unipod_driver/srv/thermal_control.hpp"
-#include "unipod_driver/srv/zoom_control.hpp"
+#include "unipod_msgs/msg/gimbal_attitude.hpp"
+#include "unipod_msgs/msg/gimbal_status.hpp"
+#include "unipod_msgs/msg/thermal_data.hpp"
+#include "unipod_msgs/srv/get_temperature.hpp"
+#include "unipod_msgs/srv/recenter.hpp"
+#include "unipod_msgs/srv/set_gimbal_angle.hpp"
+#include "unipod_msgs/srv/set_video_mode.hpp"
+#include "unipod_msgs/srv/set_zoom.hpp"
+#include "unipod_msgs/srv/thermal_control.hpp"
+#include "unipod_msgs/srv/zoom_control.hpp"
 
 namespace unipod_driver
 {
+
+namespace msg = unipod_msgs::msg;   // messages and services live in unipod_msgs
+namespace srv = unipod_msgs::srv;
 
 class UnipodDriverNode : public rclcpp::Node
 {

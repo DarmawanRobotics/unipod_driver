@@ -14,25 +14,11 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
-find_package(rosidl_default_generators REQUIRED)
+find_package(unipod_msgs REQUIRED)
 find_package(Threads REQUIRED)
 find_package(OpenCV REQUIRED COMPONENTS core imgproc videoio)
 find_package(cv_bridge REQUIRED)
 find_package(image_transport REQUIRED)
-
-rosidl_generate_interfaces(${PROJECT_NAME}
-  "msg/GimbalAttitude.msg"
-  "msg/GimbalStatus.msg"
-  "msg/ThermalData.msg"
-  "srv/GetTemperature.srv"
-  "srv/Recenter.srv"
-  "srv/SetGimbalAngle.srv"
-  "srv/SetVideoMode.srv"
-  "srv/SetZoom.srv"
-  "srv/ThermalControl.srv"
-  "srv/ZoomControl.srv"
-  DEPENDENCIES std_msgs
-)
 
 # ROS-free client: protocol, transports, request/ACK handling
 add_library(unipod_client SHARED
@@ -49,14 +35,7 @@ target_link_libraries(unipod_client Threads::Threads)
 # Driver node: PTZ, zoom, video streams, thermal, recenter
 add_executable(unipod_driver_node src/unipod_driver_node.cpp)
 target_link_libraries(unipod_driver_node unipod_client)
-ament_target_dependencies(unipod_driver_node rclcpp std_msgs geometry_msgs)
-# Foxy: rosidl_target_interfaces (rosidl_get_typesupport_target only exists from Humble on)
-if(COMMAND rosidl_get_typesupport_target)
-  rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} rosidl_typesupport_cpp)
-  target_link_libraries(unipod_driver_node "${cpp_typesupport_target}")
-else()
-  rosidl_target_interfaces(unipod_driver_node ${PROJECT_NAME} rosidl_typesupport_cpp)
-endif()
+ament_target_dependencies(unipod_driver_node rclcpp std_msgs geometry_msgs unipod_msgs)
 
 # RTSP capture (OpenCV, no ROS) and the camera node: one per stream, video1 / video2
 add_library(unipod_rtsp SHARED src/rtsp_capture.cpp)
@@ -94,5 +73,4 @@ if(BUILD_TESTING)
   target_link_libraries(test_rtsp unipod_rtsp)
 endif()
 
-ament_export_dependencies(rosidl_default_runtime)
 ament_package()
